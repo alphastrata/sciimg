@@ -630,7 +630,7 @@ impl Mask for MaskVec {
 /// Dn Vector (Masked)
 //////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct MaskedDnVec {
     vec: DnVec,
     pub mask: MaskVec,
@@ -672,10 +672,6 @@ impl Iterator for MaskedDnVecIter<'_> {
 }
 
 impl MaskedDnVec {
-    pub fn default() -> Self {
-        Self::new()
-    }
-
     pub fn new() -> Self {
         MaskedDnVec {
             vec: DnVec::new(),
