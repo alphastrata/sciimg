@@ -1,15 +1,14 @@
-/*
-    Attempt at hot pixel detection and removal.
-
-    Method:
-        For each pixel (excluding image border pixels):
-            1. Compute the standard deviation of a window of pixels (3x3, say)
-            2. Compute the z-score for the target pixel
-            3. If the z-score exceeds a threshold variance from the mean
-               we replace the pixel value with a median filter
-*/
+//! Attempt at hot pixel detection and removal.
+//! Method:
+//!     For each pixel (excluding image border pixels):
+//!         1. Compute the standard deviation of a window of pixels (3x3, say)
+//!         2. Compute the z-score for the target pixel
+//!         3. If the z-score exceeds a threshold variance from the mean
+//!            we replace the pixel value with a median filter
 
 use crate::{error, imagebuffer::ImageBuffer, stats};
+use rayon::prelude::*;
+use std::sync::{Arc, Mutex};
 
 #[allow(dead_code)]
 pub struct ReplacedPixel {
@@ -28,8 +27,8 @@ fn isolate_window(buffer: &ImageBuffer, window_size: i32, x: usize, y: usize) ->
     let mut v: Vec<f32> = Vec::with_capacity(36);
     let start = window_size / 2 * -1;
     let end = window_size / 2 + 1;
-    for _y in start..end as i32 {
-        for _x in start..end as i32 {
+    for _y in start..end {
+        for _x in start..end {
             let get_x = x as i32 + _x;
             let get_y = y as i32 + _y;
             if get_x >= 0
@@ -44,8 +43,6 @@ fn isolate_window(buffer: &ImageBuffer, window_size: i32, x: usize, y: usize) ->
     v
 }
 
-use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
 pub fn hot_pixel_detection(
     buffer: &ImageBuffer,
     window_size: i32,
@@ -78,7 +75,6 @@ pub fn hot_pixel_detection(
                             z_score,
                         })
                     } else {
-                        //map.put(x, y, buffer.get(x, y).unwrap());
                         map.put(x, y, pixel_value);
                         None
                     }
@@ -101,8 +97,8 @@ pub fn hot_pixel_detection(
 //     window_size: i32,
 //     threshold: f32,
 // ) -> error::Result<HpcResults> {
-//     let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
 //     let mut replaced_pixels: Vec<ReplacedPixel> = Vec::new();
+//     let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
 //
 //     for y in 1..buffer.height - 1 {
 //         for x in 1..buffer.width - 1 {
