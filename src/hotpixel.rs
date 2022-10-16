@@ -92,36 +92,39 @@ pub fn hot_pixel_detection(
         replaced_pixels,
     })
 }
-// pub fn hot_pixel_detection(
-//     buffer: &ImageBuffer,
-//     window_size: i32,
-//     threshold: f32,
-// ) -> error::Result<HpcResults> {
-//     let mut replaced_pixels: Vec<ReplacedPixel> = Vec::new();
-//     let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
-//
-//     for y in 1..buffer.height - 1 {
-//         for x in 1..buffer.width - 1 {
-//             let pixel_value = buffer.get(x, y).unwrap();
-//             let window = isolate_window(buffer, window_size, x, y);
-//             let z_score = stats::z_score(pixel_value, &window[0..]).unwrap();
-//             if z_score > threshold {
-//                 let m = stats::mean(&window[0..]).unwrap();
-//                 map.put(x, y, m);
-//
-//                 replaced_pixels.push(ReplacedPixel {
-//                     x,
-//                     y,
-//                     pixel_value,
-//                     z_score,
-//                 });
-//             } else {
-//                 map.put(x, y, buffer.get(x, y).unwrap());
-//             }
-//         }
-//     }
-//     Ok(HpcResults {
-//         buffer: map,
-//         replaced_pixels,
-//     })
-// }
+// Serial version
+// on the hot_pixel_correction test, the parallel version (above) is consistently faster by about
+// ~17 to 20%. (mileage may vary based on the image size etc...)
+pub fn st_hot_pixel_detection(
+    buffer: &ImageBuffer,
+    window_size: i32,
+    threshold: f32,
+) -> error::Result<HpcResults> {
+    let mut replaced_pixels: Vec<ReplacedPixel> = Vec::new();
+    let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
+
+    for y in 1..buffer.height - 1 {
+        for x in 1..buffer.width - 1 {
+            let pixel_value = buffer.get(x, y).unwrap();
+            let window = isolate_window(buffer, window_size, x, y);
+            let z_score = stats::z_score(pixel_value, &window[0..]).unwrap();
+            if z_score > threshold {
+                let m = stats::mean(&window[0..]).unwrap();
+                map.put(x, y, m);
+
+                replaced_pixels.push(ReplacedPixel {
+                    x,
+                    y,
+                    pixel_value,
+                    z_score,
+                });
+            } else {
+                map.put(x, y, buffer.get(x, y).unwrap());
+            }
+        }
+    }
+    Ok(HpcResults {
+        buffer: map,
+        replaced_pixels,
+    })
+}
