@@ -17,7 +17,7 @@ pub const ILT: [u32; 256] = [
     1903, 1918, 1933, 1948, 1963, 1979, 1994, 2009, 2025, 2033,
 ];
 
-// https://pds-imaging.jpl.nasa.gov/data/nsyt/insight_cameras/calibration/ilut/
+/// https://pds-imaging.jpl.nasa.gov/data/nsyt/insight_cameras/calibration/ilut/
 pub const NSYT_ILT: [u32; 256] = [
     0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 17, 19, 21, 23, 25, 27, 29,
     32, 34, 37, 40, 43, 46, 49, 52, 55, 59, 62, 66, 70, 73, 77, 82, 86, 90, 95, 99, 104, 109, 114,
@@ -36,7 +36,6 @@ pub const NSYT_ILT: [u32; 256] = [
 ];
 
 pub fn decompand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
-
     (0..buffer.width).into_iter().for_each(|x| {
         _ = (0..buffer.height).into_iter().for_each(|y| {
             if let Ok(raw_value) = buffer.get(x, y) {
@@ -50,7 +49,7 @@ pub fn decompand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
     })
 }
 
-// This method backs out the ILT table and is inefficient. Use sparingly
+/// This method backs out the ILT table and is inefficient. Use sparingly
 fn get_lut_value_from_ilt_value(ilt_value: u32, ilt: &[u32; 256]) -> u32 {
     if ilt_value == 0 {
         return 0;
@@ -65,7 +64,7 @@ fn get_lut_value_from_ilt_value(ilt_value: u32, ilt: &[u32; 256]) -> u32 {
     0
 }
 
-// This method backs out the ILT table and is inefficient. Use sparingly
+/// This method backs out the ILT table and is inefficient. Use sparingly
 pub fn compand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
     for x in 0..buffer.width {
         for y in 0..buffer.height {

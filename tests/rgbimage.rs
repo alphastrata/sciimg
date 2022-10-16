@@ -26,13 +26,13 @@ fn test_image_mode() {
     let mut img_rgb = rgbimage::RgbImage::open(&String::from(M20_ZCAM_ECM_RGB)).unwrap();
     assert_eq!(img_rgb.get_mode(), enums::ImageMode::U8BIT);
     img_rgb.decompand(&decompanding::ILT);
-    // assert_eq!(img_rgb.get_mode(), enums::ImageMode::U12BIT);
-    // img_rgb.normalize_to_16bit_with_max(2033.0);
-    // assert_eq!(img_rgb.get_mode(), enums::ImageMode::U16BIT);
-    // img_rgb.normalize_to_12bit_with_max(2033.0, 65535.0);
-    // assert_eq!(img_rgb.get_mode(), enums::ImageMode::U12BIT);
-    // img_rgb.normalize_to_8bit_with_max(2033.0);
-    // assert_eq!(img_rgb.get_mode(), enums::ImageMode::U8BIT);
+    assert_eq!(img_rgb.get_mode(), enums::ImageMode::U12BIT);
+    img_rgb.normalize_to_16bit_with_max(2033.0);
+    assert_eq!(img_rgb.get_mode(), enums::ImageMode::U16BIT);
+    img_rgb.normalize_to_12bit_with_max(2033.0, 65535.0);
+    assert_eq!(img_rgb.get_mode(), enums::ImageMode::U12BIT);
+    img_rgb.normalize_to_8bit_with_max(2033.0);
+    assert_eq!(img_rgb.get_mode(), enums::ImageMode::U8BIT);
 }
 
 #[test]

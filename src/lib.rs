@@ -22,7 +22,7 @@ pub mod stats;
 pub mod util;
 pub mod vector;
 
-// Dn -> Digital number / image pixel value as 32 bit floating point.
+/// Dn -> Digital number / image pixel value as 32 bit floating point.
 pub type Dn = f32;
 pub type DnVec = Vec<Dn>;
 
