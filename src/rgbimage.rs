@@ -134,12 +134,12 @@ impl RgbImage {
         Ok(rgbimage)
     }
 
-    pub fn open(file_path: &String) -> error::Result<RgbImage> {
-        if !path::file_exists(file_path.as_str()) {
+    pub fn open(file_path: &str) -> error::Result<RgbImage> {
+        if !path::file_exists(file_path) {
             panic!("File not found: {}", file_path);
         }
 
-        let image_data = open(&file_path).unwrap().into_rgba8();
+        let image_data = open(file_path).unwrap().into_rgba8();
         let dims = image_data.dimensions();
 
         let width = dims.0 as usize;

@@ -83,7 +83,7 @@ pub fn isolate_window_2d<T: Copy>(
     let mut v: Vec<T> = Vec::with_capacity(window_size * window_size);
     let start = window_size as i32 / 2 * -1;
     let end = window_size as i32 / 2 + 1;
-    for _y in start..end as i32 {
+    for _y in start..end {
         for _x in start..end as i32 {
             let get_x = x as i32 + _x;
             let get_y = y as i32 + _y;
