@@ -44,36 +44,88 @@ fn isolate_window(buffer: &ImageBuffer, window_size: i32, x: usize, y: usize) ->
     v
 }
 
+use rayon::prelude::*;
+use std::sync::{Arc, Mutex};
 pub fn hot_pixel_detection(
     buffer: &ImageBuffer,
     window_size: i32,
     threshold: f32,
 ) -> error::Result<HpcResults> {
-    let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
-    let mut replaced_pixels: Vec<ReplacedPixel> = Vec::new();
+    let mtx_map = Arc::new(Mutex::new(
+        ImageBuffer::new(buffer.width, buffer.height).unwrap(),
+    ));
 
-    for y in 1..buffer.height - 1 {
-        for x in 1..buffer.width - 1 {
-            let pixel_value = buffer.get(x, y).unwrap();
-            let window = isolate_window(buffer, window_size, x, y);
-            let z_score = stats::z_score(pixel_value, &window[0..]).unwrap();
-            if z_score > threshold {
-                let m = stats::mean(&window[0..]).unwrap();
-                map.put(x, y, m);
+    let replaced_pixels = (1..buffer.height - 1)
+        .into_par_iter()
+        .map(|y| {
+            let cl_map = mtx_map.clone();
+            (1..buffer.height - 1)
+                .into_iter()
+                .flat_map(|x| {
+                    let pixel_value = buffer.get(x, y).unwrap();
+                    let window = isolate_window(buffer, window_size, x, y);
+                    let z_score = stats::z_score(pixel_value, &window[0..]).unwrap();
+                    let mut map = cl_map.lock().unwrap();
+                    if z_score > threshold {
+                        let m = stats::mean(&window[0..]).unwrap();
 
-                replaced_pixels.push(ReplacedPixel {
-                    x,
-                    y,
-                    pixel_value,
-                    z_score,
-                });
-            } else {
-                map.put(x, y, buffer.get(x, y).unwrap());
-            }
-        }
-    }
+                        map.put(x, y, m);
+
+                        Some(ReplacedPixel {
+                            x,
+                            y,
+                            pixel_value,
+                            z_score,
+                        })
+                    } else {
+                        //map.put(x, y, buffer.get(x, y).unwrap());
+                        map.put(x, y, pixel_value);
+                        None
+                    }
+                })
+                .collect::<Vec<ReplacedPixel>>()
+        })
+        .flatten()
+        .collect::<Vec<ReplacedPixel>>();
+
+    let lock = Arc::try_unwrap(mtx_map).expect("Lock still has multiple owners");
+    let map = lock.into_inner().expect("Mutex cannot be locked");
+
     Ok(HpcResults {
         buffer: map,
         replaced_pixels,
     })
 }
+// pub fn hot_pixel_detection(
+//     buffer: &ImageBuffer,
+//     window_size: i32,
+//     threshold: f32,
+// ) -> error::Result<HpcResults> {
+//     let mut map = ImageBuffer::new(buffer.width, buffer.height).unwrap();
+//     let mut replaced_pixels: Vec<ReplacedPixel> = Vec::new();
+//
+//     for y in 1..buffer.height - 1 {
+//         for x in 1..buffer.width - 1 {
+//             let pixel_value = buffer.get(x, y).unwrap();
+//             let window = isolate_window(buffer, window_size, x, y);
+//             let z_score = stats::z_score(pixel_value, &window[0..]).unwrap();
+//             if z_score > threshold {
+//                 let m = stats::mean(&window[0..]).unwrap();
+//                 map.put(x, y, m);
+//
+//                 replaced_pixels.push(ReplacedPixel {
+//                     x,
+//                     y,
+//                     pixel_value,
+//                     z_score,
+//                 });
+//             } else {
+//                 map.put(x, y, buffer.get(x, y).unwrap());
+//             }
+//         }
+//     }
+//     Ok(HpcResults {
+//         buffer: map,
+//         replaced_pixels,
+//     })
+// }
