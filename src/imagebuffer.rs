@@ -533,8 +533,8 @@ impl ImageBuffer {
 
     pub fn put(&mut self, x: usize, y: usize, val: f32) {
         if x < self.width && y < self.height {
-            let index = y * self.width + x;
-            self.buffer[index] = val;
+            //let index = y * self.width + x;
+            self.buffer[y * self.width + x] = val;
         } else {
             panic!("Invalid pixel coordinates");
         }

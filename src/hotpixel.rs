@@ -43,6 +43,7 @@ fn isolate_window(buffer: &ImageBuffer, window_size: i32, x: usize, y: usize) ->
     v
 }
 
+//TODO: needs proper error-handling
 pub fn hot_pixel_detection(
     buffer: &ImageBuffer,
     window_size: i32,

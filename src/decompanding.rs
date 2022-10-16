@@ -36,16 +36,18 @@ pub const NSYT_ILT: [u32; 256] = [
 ];
 
 pub fn decompand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
-    for x in 0..buffer.width {
-        for y in 0..buffer.height {
-            let raw_value = buffer.get(x, y).unwrap() as usize;
-            if raw_value > 255 {
-                panic!("Invalid raw data value {}", raw_value);
+
+    (0..buffer.width).into_iter().for_each(|x| {
+        _ = (0..buffer.height).into_iter().for_each(|y| {
+            if let Ok(raw_value) = buffer.get(x, y) {
+                if raw_value as usize > 255 {
+                    panic!("Invalid raw data value {}", raw_value);
+                }
+                let ilt_value = ilt[raw_value as usize];
+                buffer.put(x, y, ilt_value as f32);
             }
-            let ilt_value = ilt[raw_value];
-            buffer.put(x, y, ilt_value as f32);
-        }
-    }
+        })
+    })
 }
 
 // This method backs out the ILT table and is inefficient. Use sparingly
