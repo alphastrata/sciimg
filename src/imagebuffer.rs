@@ -777,8 +777,8 @@ impl ImageBuffer {
 
         for y in 0..h {
             for x in 0..w {
-                let shift_x = x as i32 + horiz;
-                let shift_y = y as i32 + vert;
+                let shift_x = x + horiz;
+                let shift_y = y + vert;
 
                 if shift_x >= 0 && shift_y >= 0 && shift_x < w && shift_y < h {
                     shifted_buffer.put(

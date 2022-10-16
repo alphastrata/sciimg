@@ -37,7 +37,7 @@ pub const NSYT_ILT: [u32; 256] = [
 
 pub fn decompand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
     (0..buffer.width).into_iter().for_each(|x| {
-        _ = (0..buffer.height).into_iter().for_each(|y| {
+        (0..buffer.height).into_iter().for_each(|y| {
             if let Ok(raw_value) = buffer.get(x, y) {
                 if raw_value as usize > 255 {
                     panic!("Invalid raw data value {}", raw_value);
@@ -45,7 +45,7 @@ pub fn decompand_buffer(buffer: &mut ImageBuffer, ilt: &[u32; 256]) {
                 let ilt_value = ilt[raw_value as usize];
                 buffer.put(x, y, ilt_value as f32);
             }
-        })
+        });
     })
 }
 

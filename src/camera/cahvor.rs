@@ -75,7 +75,7 @@ impl Cahvor {
 
     pub fn lambda(&self, p: &Vector) -> Vector {
         let z = self.zeta(p);
-        self._lambda(&p, z)
+        self._lambda(p, z)
     }
 
     pub fn tau(&self, p: &Vector) -> f64 {

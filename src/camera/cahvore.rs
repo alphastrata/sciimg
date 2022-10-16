@@ -356,8 +356,8 @@ pub fn linearize(
 
     output_camera.a = camera_model
         .ls_to_look_vector(&ImageCoordinate {
-            line: p2_line as f64,
-            sample: p2_sample as f64,
+            line: p2_line,
+            sample: p2_sample,
         })
         .expect("Failed to project boresight")
         .look_direction;
