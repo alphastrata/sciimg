@@ -84,7 +84,7 @@ pub fn isolate_window_2d<T: Copy>(
     let start = window_size as i32 / 2 * -1;
     let end = window_size as i32 / 2 + 1;
     for _y in start..end {
-        for _x in start..end as i32 {
+        for _x in start..end {
             let get_x = x as i32 + _x;
             let get_y = y as i32 + _y;
             if get_x >= 0 && get_x < width_2d as i32 && get_y >= 0 && get_y < height_2d as i32 {

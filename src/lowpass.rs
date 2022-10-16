@@ -33,11 +33,8 @@ pub fn lowpass_imagebuffer(imagebuff: &ImageBuffer, window_size: usize) -> Image
 
     (0..lowpass_buffer.height).for_each(|y| {
         (0..lowpass_buffer.width).for_each(|x| {
-            match mean_of_window(imagebuff, window_size, x, y) {
-                Some(m) => {
-                    lowpass_buffer.put(x, y, m);
-                }
-                None => {}
+            if let Some(m) = mean_of_window(imagebuff, window_size, x, y) {
+                lowpass_buffer.put(x, y, m);
             };
         });
     });

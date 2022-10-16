@@ -277,12 +277,8 @@ pub fn apply_inpaint_to_buffer_with_mask(
     // going to fill it in with 0x0 values as we go. If we don't, then
     // we'll keep finding starting points and this will be an infinite
     // loop. Which is bad. Perhaps consider an alternate method here.
-    loop {
-        // TODO: Don't leave embedded match statements. I hate that as much as embedded case statements...
-        match find_starting_point(&mask) {
-            Some(pt) => infill(&mut working_buffer, &mut mask, &pt),
-            None => break,
-        };
+    while let Some(pt) = find_starting_point(&mask) {
+        infill(&mut working_buffer, &mut mask, &pt);
     }
 
     let newimage = match vec_to_rgb_image(&working_buffer) {
@@ -294,7 +290,7 @@ pub fn apply_inpaint_to_buffer_with_mask(
 }
 
 pub fn apply_inpaint_to_buffer(rgb: &RgbImage, mask: &ImageBuffer) -> error::Result<RgbImage> {
-    apply_inpaint_to_buffer_with_mask(&rgb, &mask)
+    apply_inpaint_to_buffer_with_mask(rgb, mask)
 }
 
 pub fn make_mask_from_red(rgbimage: &RgbImage) -> error::Result<ImageBuffer> {
