@@ -1,25 +1,36 @@
 use crate::{image::Image, prelude::ImageBuffer, Dn};
+use core::num;
 use flume;
 use std::default;
 use wgpu::util::DeviceExt;
 
 const WORKGROUP_SIZE: u32 = 3;
 
+/// 3*3 grid.
+const HOT_PX_CORRECTION_TILE_DIM: i32 = 3;
+
+/// Wrapping a `[wgpu::Device]`, which is effectively a `GPU` handle.
 pub struct SciImgGpuWrapper {
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
 
+/// This is an exact copy of the struct we read in the hot_pixel_correction.wgsl shader.
+/// Keep it in sync!
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct Params {
+struct HotPxCorrectionParams {
+    /// Image Width
     width: usize,
+    /// Image Heght
     height: usize,
-    window_size: i32, // fixed to 3
+    /// This is ALWAYS square (for our purposes)
+    tile_size: i32,
+    /// Values under this will NOT be corrected.
     threshold: f32,
 }
-unsafe impl bytemuck::Pod for Params {}
-unsafe impl bytemuck::Zeroable for Params {}
+unsafe impl bytemuck::Pod for HotPxCorrectionParams {}
+unsafe impl bytemuck::Zeroable for HotPxCorrectionParams {}
 
 impl SciImgGpuWrapper {
     pub async fn new() -> Result<Self, anyhow::Error> {
@@ -47,16 +58,19 @@ impl SciImgGpuWrapper {
         img: &mut Image,
         threshold: f32,
     ) -> Result<(), anyhow::Error> {
-        // Convert image to f32 vec.
-        let numbers = img.to_f32_vec();
-        let buffer_size = (numbers.len() * std::mem::size_of::<f32>()) as wgpu::BufferAddress;
+        let raw_px_data = img.to_f32_vec();
+        #[cfg(debug_assertions)]
+        log::debug!("px count = {}", raw_px_data.len());
 
-        // Create input & output buffers.
+        let buffer_size = (raw_px_data.len() * std::mem::size_of::<f32>()) as wgpu::BufferAddress;
+
+        // Create input & output buffers, one for getting our stuff ON to the gpu htod (host to device)
+        // one for readback dtoh (device to host)
         let input_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Input Buffer"),
-                contents: bytemuck::cast_slice(&numbers),
+                contents: bytemuck::cast_slice(&raw_px_data),
                 usage: wgpu::BufferUsages::STORAGE,
             });
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -87,10 +101,10 @@ impl SciImgGpuWrapper {
         let image_width = img.width;
         let image_height = img.height;
 
-        let params_data = Params {
+        let params_data = HotPxCorrectionParams {
             width: image_width,
             height: image_height,
-            window_size: 3,
+            tile_size: HOT_PX_CORRECTION_TILE_DIM,
             threshold,
         };
         let uniform_buffer = self
@@ -101,7 +115,7 @@ impl SciImgGpuWrapper {
                 usage: wgpu::BufferUsages::UNIFORM,
             });
 
-        // Create bind group layout.
+        // bind groups are how we 'BIND' values to the corresponding shadercode
         let bind_group_layout =
             self.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -143,7 +157,7 @@ impl SciImgGpuWrapper {
                     ],
                 });
 
-        // Create pipeline layout & compute pipeline.
+        //  pipeline layout
         let pipeline_layout = self
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -151,6 +165,7 @@ impl SciImgGpuWrapper {
                 bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
+        // Jobs are executed when pushed through pipelines
         let compute_pipeline =
             self.device
                 .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -212,24 +227,39 @@ impl SciImgGpuWrapper {
             bytemuck::cast_slice(&mapped).to_vec()
         };
         staging_buffer.unmap();
-        img.from_f32_vec(&data);
+        img.set_bands_from_raw(data);
         Ok(())
     }
 }
 
 impl crate::image::Image {
-    pub fn iter_inner_buffer_dn(&self) -> std::slice::Iter<'_, ImageBuffer> {
-        self.bands.iter()
-    }
     pub fn to_f32_vec(&self) -> Vec<Dn> {
-        // Use cloned() to convert &f32 to f32.
         self.bands.iter().flat_map(|b| b.buffer.iter()).collect()
     }
-    pub fn from_f32_vec(&mut self, data: &[Dn]) {
-        let buf = ImageBuffer::from_vec(data, self.width, self.height)
-            .expect("failed to create an ImageBuffer from data.");
 
-        std::mem::swap(&mut self.bands, &mut vec![buf]);
+    /// Swaps over the values in self.bands with new ones from the input `data`
+    /// NOTE: this panics if the data is not in the right shape etc.
+    pub fn set_bands_from_raw(&mut self, data: Vec<Dn>) {
+        //Calculate pixels per channel
+        //NOTE: self.bands()'s ImageBuffer is actually the compelete image, just for ONE of its `n` channels.
+        let channel_size = self.width * self.height;
+        assert_eq!(
+            data.len() % channel_size,
+            0,
+            "Data length must be a multiple of width*height"
+        );
+        let channel_count = data.len() / channel_size;
+
+        self.bands = (0..channel_count)
+            .map(|i| {
+                let start = i * channel_size;
+                let end = start + channel_size;
+
+                //NOTE: intentional panic
+                ImageBuffer::from_vec(&data[start..end], self.width, self.height)
+                    .expect("failed to create an ImageBuffer from data")
+            })
+            .collect();
     }
 }
 
@@ -237,12 +267,28 @@ impl crate::image::Image {
 mod tests {
     use super::SciImgGpuWrapper;
     use crate::image::Image;
+    #[test]
+    fn gpu_hot_px_correction() {
+        _ = pretty_env_logger::init();
+        let test_image_path = "tests/testdata/MSL_MAHLI_INPAINT_Sol2904_V1.png";
+        let mut img = Image::open(test_image_path).unwrap();
+        log::debug!("num bands: {}", img.bands.len());
+        // the image is split RGB would be 3 bands
+        // RGBA would be 4 bands
+        // the sciimg::Image type has to be this way because of the other values it can contain.
 
+        pollster::block_on(async {
+            let gpu = SciImgGpuWrapper::new().await.unwrap();
+            log::debug!("GPU SETUP COMPLETE");
+
+            let threshold = 1.0;
+            _ = gpu.hot_pixel_correction(&mut img, threshold).await.unwrap();
+        });
+    }
     #[test]
     fn hot_pixel_correction() {
         let test_image_path = "tests/testdata/MSL_MAHLI_INPAINT_Sol2904_V1.png";
         let mut img = Image::open(test_image_path).unwrap();
-        dbg!(img.width, img.height);
 
         let non_zero_before = img
             .bands
@@ -251,28 +297,15 @@ mod tests {
             .filter(|&x| x != 0.0)
             .count();
 
-        dbg!(&non_zero_before);
-        // img.hot_pixel_correction(3, 1.0); // Adjust params if needed
+        img.hot_pixel_correction(3, 1.0); // Adjust params if needed
 
-        // let non_zero_after = img
-        //     .bands
-        //     .iter()
-        //     .flat_map(|b| b.buffer.iter())
-        //     .filter(|&x| x != 0.0)
-        //     .count();
-        // dbg!(&non_zero_after);
+        let non_zero_after = img
+            .bands
+            .iter()
+            .flat_map(|b| b.buffer.iter())
+            .filter(|&x| x != 0.0)
+            .count();
 
-        // assert_ne!(non_zero_before, non_zero_after);
-    }
-
-    #[test]
-    fn gpu_hot_px_correction() {
-        let test_image_path = "tests/testdata/MSL_MAHLI_INPAINT_Sol2904_V1.png";
-        let mut img = Image::open(test_image_path).unwrap();
-        pollster::block_on(async {
-            let gpu = SciImgGpuWrapper::new().await.unwrap();
-            let threshold = 1.0;
-            _ = gpu.hot_pixel_correction(&mut img, threshold).await.unwrap();
-        });
+        assert_ne!(non_zero_before, non_zero_after);
     }
 }

@@ -14,7 +14,11 @@ pub mod camera;
 pub mod debayer;
 pub mod decompanding;
 pub mod drawable;
+
 pub mod enums;
+
+#[feature("wgpu")]
+pub mod accelerator_utils;
 
 #[deprecated]
 pub mod error;
@@ -684,9 +688,9 @@ impl MaskedDnVec {
             null: 0.0,
         }
     }
-    pub fn from_dnvec(vec: &DnVec) -> Self {
+    pub fn from_dnvec(vec: &[Dn]) -> Self {
         MaskedDnVec {
-            vec: vec.clone(),
+            vec: vec.to_vec(),
             mask: MaskVec::new_mask(vec.len()),
             null: 0.0,
         }

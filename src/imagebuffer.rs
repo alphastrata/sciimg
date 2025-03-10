@@ -101,7 +101,7 @@ impl ImageBuffer {
     }
 
     // Creates a new image buffer at the requested width, height and data
-    pub fn from_vec(v: &DnVec, width: usize, height: usize) -> Result<ImageBuffer> {
+    pub fn from_vec(v: &[Dn], width: usize, height: usize) -> Result<ImageBuffer> {
         ImageBuffer::from_vec_as_mode(v, width, height, enums::ImageMode::U16BIT)
     }
 
@@ -112,13 +112,17 @@ impl ImageBuffer {
 
     // Creates a new image buffer at the requested width, height and data
     pub fn from_vec_as_mode(
-        v: &DnVec,
+        v: &[Dn],
         width: usize,
         height: usize,
         mode: enums::ImageMode,
     ) -> Result<ImageBuffer> {
         if v.len() != (width * height) {
-            panic!("Dimensions to not match vector length");
+            panic!(
+                "Dimensions to not match vector length: w:{width}, h:{height}, d:{} != {}",
+                v.len(),
+                width * height
+            );
         }
 
         Ok(ImageBuffer {
@@ -268,7 +272,7 @@ impl ImageBuffer {
         let width = dims.0 as usize;
         let height = dims.1 as usize;
 
-        let v = iproduct!(0..height, 0..width)
+        let v: Vec<Dn> = iproduct!(0..height, 0..width)
             .map(|(y, x)| image_data.get_pixel(x as u32, y as u32)[0] as f32)
             .collect();
 
@@ -283,7 +287,7 @@ impl ImageBuffer {
         let width = dims.0 as usize;
         let height = dims.1 as usize;
 
-        let v = iproduct!(0..height, 0..width)
+        let v: Vec<Dn> = iproduct!(0..height, 0..width)
             .map(|(y, x)| image_data.get_pixel(x as u32, y as u32)[0] as f32)
             .collect();
 
@@ -419,6 +423,10 @@ impl ImageBuffer {
             v[i] = self.buffer[i] as u16;
         });
         v
+    }
+
+    pub fn iter_dn_vec(&self) -> std::slice::Iter<'_, Dn> {
+        self.buffer.vec.iter()
     }
 
     pub fn to_vector(&self) -> Vec<f32> {
