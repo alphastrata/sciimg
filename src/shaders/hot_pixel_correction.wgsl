@@ -1,4 +1,9 @@
 // hot_pixel_correction.wgsl
+//
+// This version does per-channel hot pixel detection & correction in the same way as
+// the CPU code: it computes the mean/stddev on a single channel's window and, if the
+// pixel is above threshold, replaces that channel's pixel with the channel's mean.
+//
 struct Params {
     width: u32,
     height: u32,
@@ -7,100 +12,101 @@ struct Params {
 };
 
 @group(0) @binding(0)
-var<storage, read> input: array<f32>;
-// Our input array is flattened as [R[...], G[...], B[...]]
+var<storage, read> input: array<f32>;      // Flattened as [R[...], G[...], B[...]]
 @group(0) @binding(1)
 var<storage, read_write> output: array<f32>;
-
 @group(0) @binding(2)
 var<uniform> params: Params;
 
-@compute @workgroup_size(16,16,1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let width = params.width;
-    let height = params.height;
-    let channelSize = width * height;
-    if (gid.x >= width || gid.y >= height) {
-        return;
-    }
-    let x = i32(gid.x);
-    let y = i32(gid.y);
-    let idx = y * i32(width) + i32(gid.x);
+fn load_pixel(idx: i32, channelSize: i32) -> vec3<f32> {
+    return vec3<f32>(
+        input[idx],
+        input[idx + channelSize],
+        input[idx + 2 * channelSize]
+    );
+}
 
-    // For border pixels, copy all channels.
-    if (x < 1 || x >= i32(width)-1 || y < 1 || y >= i32(height)-1) {
-        output[idx] = input[idx];
-        output[idx + i32(channelSize)] = input[idx + i32(channelSize)];
-        output[idx + i32(2u * channelSize)] = input[idx + i32(2u * channelSize)];
-        return;
-    }
+fn store_pixel(idx: i32, channelSize: i32, col: vec3<f32>) {
+    output[idx] = col.r;
+    output[idx + channelSize] = col.g;
+    output[idx + 2 * channelSize] = col.b;
+}
 
+// Helper: read one channel's value at global pixel idx.
+fn load_channel(idx: i32, channelSize: i32, channel: i32) -> f32 {
+    return input[idx + channel * channelSize];
+}
+
+// Helper: write one channel's corrected value to global pixel idx.
+fn store_channel(idx: i32, channelSize: i32, channel: i32, val: f32) {
+    output[idx + channel * channelSize] = val;
+}
+
+// Accumulate mean/stddev for a single channel in a window around (x,y).
+fn process_channel(idx: i32, channelSize: i32, x: i32, y: i32, channel: i32) -> f32 {
+    let w = i32(params.width);
+    let h = i32(params.height);
     let half = params.window_size / 2;
-    var sumR: f32 = 0.0;
-    var sumG: f32 = 0.0;
-    var sumB: f32 = 0.0;
+
+    var sum: f32 = 0.0;
+    var sumSq: f32 = 0.0;
     var count: i32 = 0;
-    // Accumulate sums for each channel.
-    for (var j: i32 = -half; j <= half; j = j + 1) {
-        for (var i: i32 = -half; i <= half; i = i + 1) {
-            let nx = x + i;
-            let ny = y + j;
-            if (nx >= 0 && nx < i32(width) && ny >= 0 && ny < i32(height)) {
-                let nidx = ny * i32(width) + nx;
-                sumR = sumR + input[nidx];
-                sumG = sumG + input[nidx + i32(channelSize)];
-                sumB = sumB + input[nidx + i32(2u * channelSize)];
+
+    for (var dy = -half; dy <= half; dy = dy + 1) {
+        for (var dx = -half; dx <= half; dx = dx + 1) {
+            let nx = x + dx;
+            let ny = y + dy;
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                let nidx = ny * w + nx;
+                let val = load_channel(nidx, channelSize, channel);
+                sum = sum + val;
+                sumSq = sumSq + (val * val);
                 count = count + 1;
             }
         }
     }
-    let meanR = sumR / f32(count);
-    let meanG = sumG / f32(count);
-    let meanB = sumB / f32(count);
 
-    // Accumulate squared differences.
-    var sumSqR: f32 = 0.0;
-    var sumSqG: f32 = 0.0;
-    var sumSqB: f32 = 0.0;
-    for (var j: i32 = -half; j <= half; j = j + 1) {
-        for (var i: i32 = -half; i <= half; i = i + 1) {
-            let nx = x + i;
-            let ny = y + j;
-            if (nx >= 0 && nx < i32(width) && ny >= 0 && ny < i32(height)) {
-                let nidx = ny * i32(width) + nx;
-                let diffR = input[nidx] - meanR;
-                let diffG = input[nidx + i32(channelSize)] - meanG;
-                let diffB = input[nidx + i32(2u * channelSize)] - meanB;
-                sumSqR = sumSqR + diffR * diffR;
-                sumSqG = sumSqG + diffG * diffG;
-                sumSqB = sumSqB + diffB * diffB;
-            }
-        }
+    let mean = sum / f32(count);
+    let variance = (sumSq / f32(count)) - (mean * mean);
+    let stddev = sqrt(max(variance, 0.0));
+    let currVal = load_channel(idx, channelSize, channel);
+
+    // z-score
+    let z = select(0.0, abs(currVal - mean) / stddev, stddev > 0.0);
+
+    // If the pixel is above threshold, replace with mean
+     if (z > params.threshold) { 
+        return mean; 
+    } else { 
+        return currVal; 
     }
-    let stddevR = sqrt(sumSqR / f32(count));
-    let stddevG = sqrt(sumSqG / f32(count));
-    let stddevB = sqrt(sumSqB / f32(count));
+}
 
-    // Get current pixel values.
-    let currR = input[idx];
-    let currG = input[idx + i32(channelSize)];
-    let currB = input[idx + i32(2u * channelSize)];
+@compute @workgroup_size(16,16,1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let width = i32(params.width);
+    let height = i32(params.height);
+    let x = i32(gid.x);
+    let y = i32(gid.y);
 
+    // Guard if out of bounds
+    if (x >= width || y >= height) {
+        return;
+    }
 
-    // Compute z-scores (guard against division by zero) using select:
-    let zR = select(0.0, abs(currR - meanR) / stddevR, stddevR > 0.0);
-    let zG = select(0.0, abs(currG - meanG) / stddevG, stddevG > 0.0);
-    let zB = select(0.0, abs(currB - meanB) / stddevB, stddevB > 0.0);
+    let idx = y * width + x;
+    let channelSize = width * height;
 
+    // For border, just copy original
+    if (x < 1 || x >= (width - 1) || y < 1 || y >= (height - 1)) {
+        store_pixel(idx, channelSize, load_pixel(idx, channelSize));
+        return;
+    }
 
-    var outR = currR;
-    var outG = currG;
-    var outB = currB;
-    if (zR > params.threshold) { outR = meanR; }
-    if (zG > params.threshold) { outG = meanG; }
-    if (zB > params.threshold) { outB = meanB; }
+    // Process each channel independently, so as to be identical to the cpu version in hotpixel.rs
+    let newR = process_channel(idx, channelSize, x, y, 0);
+    let newG = process_channel(idx, channelSize, x, y, 1);
+    let newB = process_channel(idx, channelSize, x, y, 2);
 
-    output[idx] = outR;
-    output[idx + i32(channelSize)] = outG;
-    output[idx + i32(2u * channelSize)] = outB;
+    store_pixel(idx, channelSize, vec3<f32>(newR, newG, newB));
 }
