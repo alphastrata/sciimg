@@ -7,7 +7,6 @@ pub enum CalFileType {
 
 // Image data value range. Doesn't enforce actual
 // value data types in the structs
-#[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ImageMode {
     U8BIT,
