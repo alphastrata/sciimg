@@ -37,10 +37,15 @@ bytemuck = "1.22.0"
 ndarray = { version = "0.16.1", features = ["rayon"] }
 mint = "0.5.9"
 pollster = "0.4.0"
+flume = "0.11.1"
 
 [dev-dependencies]
 criterion = "0.5.1"
 
+# [[bench]]
+# name = "gaussian"
+# harness = false
+
 [[bench]]
-name = "gaussian"
+name = "load_gpu"
 harness = false
