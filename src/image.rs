@@ -30,6 +30,9 @@ impl Image {
     pub fn buffers(&self) -> &[ImageBuffer] {
         &self.bands
     }
+    pub fn channels(&self) -> usize {
+        self.bands.len()
+    }
 }
 
 fn image_uses_alpha(buffer: &DynamicImage) -> bool {
