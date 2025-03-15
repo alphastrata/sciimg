@@ -11,7 +11,6 @@ license = "MIT"
 
 [features]
 rayon = ["dep:rayon"]
-# default = ["rayon"]
 default = []
 
 [dependencies]
@@ -25,14 +24,6 @@ serde = { version = "1.0.125", features = ["derive"] }
 string-builder = "0.2.0"
 itertools = "0.10.5"
 anyhow = "1.0.65"
-
-# GPU Deps
-# TODO: make optional behind 'gpu' feature flag
-wgpu = "24.0.1"
-bytemuck = "1.22.0"
-flume = "0.11.1"
-thiserror = "2.0.12"
-encase = "0.10.0"
 
 [dev-dependencies]
 criterion = "0.5.1"
