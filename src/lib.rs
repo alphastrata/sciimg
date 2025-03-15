@@ -22,8 +22,6 @@ pub mod gaussianblur;
 pub mod hotpixel;
 pub mod image;
 pub mod imagebuffer;
-
-pub mod gpu_image;
 pub mod imagerot;
 pub mod inpaint;
 pub mod lowpass;
