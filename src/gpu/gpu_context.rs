@@ -1,14 +1,7 @@
 //! The GPU version of a `sciimg::Image`
-use super::image::{dimensions::ImgDimensions, Empty, GpuImage, ImageUniform};
-use crate::{
-    enums, image::Image, max, min, path, Dn, DnVec, Mask, MaskVec, MaskedDnVec, MinMax, VecMath,
-};
-use encase::{
-    internal::{ReadFrom, WriteInto},
-    ArrayLength, ShaderSize, ShaderType, StorageBuffer,
-};
-use glam::{Vec3, Vec3A, Vec3Swizzles, Vec4, Vec4Swizzles};
-use wgpu::{BufferUsages, Features};
+use super::image::{Empty, GpuImage};
+use encase::{internal::WriteInto, ShaderType};
+use wgpu::Features;
 
 /// A `gpu` wrapper, holding all the wgpu goodies we need to get stuff done
 // NOTE: You should implement things ON this.
@@ -70,9 +63,7 @@ impl GpuContext {
                 cache: None,
             })
     }
-}
 
-impl GpuContext {
     /// Host -> Device
     /// Copies a GpuImage `Into` a `wgpu::Buffer` AND writes it to GPU Storage.
     ///
@@ -124,5 +115,219 @@ impl GpuContext {
         });
         self.queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
         uniform_buffer
+    }
+
+    /// In Sciimg out GPU accelerated image ops are built around a very simple flow
+    /// TODO: ascii art of how we have one input image, one output image, and one set of uniforms that we leave
+    /// for developers to have freedom over.
+    /// We do this to guarantee (for beginners etc) that shader bindings if they follow existing code:
+    /// ```rust (ignore)
+    ///    @group(0) @binding(0) var<uniform> blur_params: GaussianBlurUniform;
+    ///    @group(0) @binding(1) var<storage, read> input_data: GpuImg;
+    ///    @group(1) @binding(0) var<storage, read_write> output_data: GpuImg;
+    /// ```
+    /// Will work for them.
+    pub fn setup_bindgroups_and_layouts(
+        &self,
+        input_buffer: wgpu::Buffer,
+        output_buffer: &wgpu::Buffer,
+        uniform_buffer: wgpu::Buffer,
+    ) -> (
+        wgpu::BindGroupLayout,
+        wgpu::BindGroupLayout,
+        wgpu::BindGroup,
+        wgpu::BindGroup,
+    ) {
+        // @group(0)
+        let group0 = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("GaussianBlur Inputs & Uniforms"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // @group(1)
+        let group1 = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Sciimg ReadBack"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        // 0
+        let group0_binds = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Sciimg bind_group0"),
+            layout: &group0,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: input_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // 1
+        let group1_binds = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Sciimg bind_group1"),
+            layout: &group1,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: output_buffer.as_entire_binding(),
+            }],
+        });
+        (group0, group1, group0_binds, group1_binds)
+    }
+}
+
+impl GpuContext {
+    pub fn create_encoder(&self) -> wgpu::CommandEncoder {
+        self.device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Sciimg Compute Encoder"),
+            })
+    }
+    pub fn set_binds<'buf, I>(&self, compute_pass: &mut wgpu::ComputePass<'_>, bind_groups: I)
+    where
+        I: IntoIterator<Item = &'buf wgpu::BindGroup>,
+    {
+        let mut idx: u32 = 0;
+        for bind_group in bind_groups.into_iter() {
+            compute_pass.set_bind_group(idx, bind_group, &[]);
+            idx += 1;
+        }
+    }
+
+    /// Creates a pipeline layout suitable for 2, and ONLY 2 Layouts.
+    pub fn create_pipeline_layout(
+        &self,
+        bind_group_layouts: &[&wgpu::BindGroupLayout; 2],
+        shader: wgpu::ShaderModuleDescriptor,
+    ) -> (wgpu::PipelineLayout, wgpu::ShaderModule) {
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("GaussianBlur pipeline layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let cs_module = self.device.create_shader_module(shader);
+
+        (pipeline_layout, cs_module)
+    }
+    pub fn create_compute_pass<'e>(
+        &self,
+        pipeline: wgpu::ComputePipeline,
+        encoder: &'e mut wgpu::CommandEncoder,
+    ) -> wgpu::ComputePass<'e> {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Sciimg Compute Pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&pipeline);
+
+        compute_pass
+    }
+
+    /// Dispatches a GPU compute job.
+    ///
+    /// `width` and `height` define the total work area. `x_div_ceil` and `y_div_ceil`
+    /// control workgroup size (defaulting to 16x16). `div_ceil` ensures all data is
+    /// processed, rounding up the number of workgroups if `width` or `height` are not
+    /// perfectly divisible by the workgroup size. The shader must handle out-of-bounds
+    /// access.
+    pub fn run_compute_job(
+        &self,
+        width: u32,
+        height: u32,
+        x_div_ceil: Option<u32>,
+        y_div_ceil: Option<u32>,
+        mut compute_pass: wgpu::ComputePass<'_>,
+    ) {
+        let gx = width.div_ceil(x_div_ceil.unwrap_or(16));
+        let gy = height.div_ceil(y_div_ceil.unwrap_or(16));
+        compute_pass.dispatch_workgroups(gx, gy, 1);
+        drop(compute_pass); //TODO: drop ain't magic as the docs say do we need this if we've wrapped it up in a func?
+    }
+
+    /// Device -> Host
+    ///
+    /// This copies BACK the GpuImage you sent over, i.e you've called `GpuContext::run_compute_job`
+    /// Call this AFTER your processing is done (although note that it blocks).
+    ///
+    /// NOTES:
+    /// - Panics if the output is empty.
+    pub fn readback_gpu(
+        &self,
+        output_buffer: wgpu::Buffer,
+        readback_buffer: wgpu::Buffer,
+        mut encoder: wgpu::CommandEncoder,
+    ) -> GpuImage {
+        // 10) enque a copy Device -> Host & submit it.
+        encoder.copy_buffer_to_buffer(&output_buffer, 0, &readback_buffer, 0, output_buffer.size());
+        let submit = encoder.finish();
+        self.queue.submit([submit]);
+
+        // 11) Read stuff back n wait...
+        let buffer_slice = readback_buffer.slice(..);
+        buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
+        self.device.poll(wgpu::PollType::Wait).unwrap();
+
+        // 12) Map (DtoH) results
+        let mapped_range = buffer_slice.get_mapped_range();
+        let mut final_bytes = mapped_range.to_vec();
+        drop(mapped_range);
+        readback_buffer.unmap();
+
+        assert!(
+            !final_bytes.is_empty(),
+            "Failed to copy any data back from the Shader's output..."
+        );
+
+        // 13) Decode
+        let sbuf = encase::StorageBuffer::new(&mut final_bytes);
+        let mut new_image: GpuImage = GpuImage::empty();
+        match sbuf.read(&mut new_image) {
+            Ok(_) => {
+                assert!(!new_image.data.is_empty());
+                log::trace!("Successfully read data: {} elements", new_image.data.len())
+            }
+            Err(e) => panic!("Failed to deserialize buffer: {:?}", e),
+        };
+
+        new_image
     }
 }

@@ -132,9 +132,9 @@ impl Empty for GpuImage {
 }
 
 pub mod dimensions {
-    use glam::{Vec3, Vec4};
+    
 
-    use super::GpuImage;
+    
 
     pub trait ImgDimensions {
         fn dimensions(&self) -> (u32, u32);
