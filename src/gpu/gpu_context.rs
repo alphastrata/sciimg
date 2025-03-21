@@ -121,7 +121,7 @@ impl GpuContext {
     /// TODO: ascii art of how we have one input image, one output image, and one set of uniforms that we leave
     /// for developers to have freedom over.
     /// We do this to guarantee (for beginners etc) that shader bindings if they follow existing code:
-    /// ```rust (ignore)
+    /// ```rust,ignore
     ///    @group(0) @binding(0) var<uniform> blur_params: GaussianBlurUniform;
     ///    @group(0) @binding(1) var<storage, read> input_data: GpuImg;
     ///    @group(1) @binding(0) var<storage, read_write> output_data: GpuImg;
@@ -220,6 +220,11 @@ impl GpuContext {
                 label: Some("Sciimg Compute Encoder"),
             })
     }
+    /// Sets up the bindings the input `compute_pass` will use, i.e, creates these:
+    /// ```rust,ignore
+    ///     @group(0) @binding(x) ...
+    ///     @group(1) @binding(y) ...
+    ///```
     pub fn set_binds<'buf, I>(&self, compute_pass: &mut wgpu::ComputePass<'_>, bind_groups: I)
     where
         I: IntoIterator<Item = &'buf wgpu::BindGroup>,
@@ -290,7 +295,7 @@ impl GpuContext {
     ///
     /// NOTES:
     /// - Panics if the output is empty.
-    pub fn readback_gpu(
+    pub fn read_from_device(
         &self,
         output_buffer: wgpu::Buffer,
         readback_buffer: wgpu::Buffer,
@@ -329,5 +334,57 @@ impl GpuContext {
         };
 
         new_image
+    }
+}
+
+impl GpuContext {
+    pub(crate) fn default_io_buffers(
+        &self,
+        input_size: u64,
+        input_buffer: &wgpu::Buffer,
+    ) -> (wgpu::Buffer, wgpu::Buffer) {
+        // NOTE: Don't abstract these -- it's not worth it to have a 'helper'
+        // 2a) Output buffer
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("GaussianBlur Output"),
+            size: input_buffer.size(), // Must be the same
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        // 2b) we make a final buffer that can be read FROM the cpu
+        let readback_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("GaussianBlur Staging"),
+            size: input_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        (output_buffer, readback_buffer)
+    }
+    pub(crate) fn inner_run_simple_gpu_job<U: ShaderType + WriteInto>(
+        &self,
+        img: &GpuImage,
+        width: u32,
+        height: u32,
+        uniform_data: U,
+        shader: wgpu::ShaderModuleDescriptor,
+    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::CommandEncoder) {
+        let (input_size, input_buffer) = self.write_img_to_device(img);
+        let (output_buffer, readback_buffer) = self.default_io_buffers(input_size, &input_buffer);
+        let uniform_buffer = self.write_uniforms_to_device(uniform_data);
+
+        let (group0_layout, group1_layout, group0_binds, group1_binds) =
+            self.setup_bindgroups_and_layouts(input_buffer, &output_buffer, uniform_buffer);
+
+        let (pipeline_layout, cs_module) =
+            self.create_pipeline_layout(&[&group0_layout, &group1_layout], shader);
+        let pipeline = self.create_compute_pipeline(&pipeline_layout, &cs_module, "main");
+
+        let mut encoder = self.create_encoder();
+        let mut compute_pass = self.create_compute_pass(pipeline, &mut encoder);
+        self.set_binds(&mut compute_pass, [&group0_binds, &group1_binds]);
+
+        self.run_compute_job(width, height, None, None, compute_pass);
+        (output_buffer, readback_buffer, encoder)
     }
 }

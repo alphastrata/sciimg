@@ -11,9 +11,12 @@ struct GaussianBlurUniform {
     pub height: u32,
     pub pass_index: u32,
 }
-impl GpuContext {
-    const SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("../shaders/gaussian_blur.wgsl");
 
+// const SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("../shaders/gaussian_blur.wgsl");
+const SHADER: wgpu::ShaderModuleDescriptor<'_> =
+    include_wgsl!("../shaders/fast_gaussian_blur.wgsl");
+
+impl GpuContext {
     pub fn gaussian_blur(
         &self,
         img: &GpuImage,
@@ -22,62 +25,21 @@ impl GpuContext {
         radius: u32,
         sigma: f32,
     ) -> GpuImage {
-        let uniform_data = GaussianBlurUniform {
-            radius,
-            sigma,
+        let (output_buffer, readback_buffer, encoder) = self.inner_run_simple_gpu_job(
+            img,
             width,
             height,
-            pass_index: 0,
-        };
+            GaussianBlurUniform {
+                radius,
+                sigma,
+                width,
+                height,
+                pass_index: 0,
+            },
+            SHADER,
+        );
 
-        // 1) Create & fill input buffer
-        let (input_size, input_buffer) = self.write_img_to_device(img);
-
-        // NOTE: Don't abstract these -- it's not worth it to have a 'helper'
-        // 2a) Output buffer
-        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GaussianBlur Output"),
-            size: input_buffer.size(), // Must be the same
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        // 2b) we make a final buffer that can be read FROM the cpu
-        let readback_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GaussianBlur Staging"),
-            size: input_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Uniforms are special:
-        // 3) Uniform buffer
-        let uniform_buffer = self.write_uniforms_to_device(uniform_data);
-
-        // 4) Bind groups & Layouts for them.
-        let (group0_layout, group1_layout, group0_binds, group1_binds) =
-            self.setup_bindgroups_and_layouts(input_buffer, &output_buffer, uniform_buffer);
-
-        // 6) Pipeline
-        let (pipeline_layout, cs_module) =
-            self.create_pipeline_layout(&[&group0_layout, &group1_layout], Self::SHADER);
-        // .create_shader_module(wgpu::include_wgsl!("../shaders/fast_gaussian_blur.wgsl"));
-
-        let pipeline = self.create_compute_pipeline(&pipeline_layout, &cs_module, "main");
-
-        // 7) Bind things TO that Pipeline
-        let mut encoder = self.create_encoder();
-
-        // 8) Build a compute pass for the Pipeline, bind the binds to it.
-        let mut compute_pass = self.create_compute_pass(pipeline, &mut encoder);
-
-        let bind_groups = [&group0_binds, &group1_binds];
-        self.set_binds(&mut compute_pass, bind_groups);
-
-        // 9) Dispatch the work! ** Actually run shit on the GPU **
-        self.run_compute_job(width, height, None, None, compute_pass);
-
-        self.readback_gpu(output_buffer, readback_buffer, encoder)
+        self.read_from_device(output_buffer, readback_buffer, encoder)
     }
 }
 
