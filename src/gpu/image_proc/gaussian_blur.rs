@@ -12,8 +12,7 @@ struct GaussianBlurUniform {
     pub pass_index: u32,
 }
 
-const SHADER: wgpu::ShaderModuleDescriptor<'_> =
-    include_wgsl!("../shaders/fast_gaussian_blur.wgsl");
+const SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("../shaders/gaussian_blur.wgsl");
 
 impl GpuContext {
     pub fn gaussian_blur(
