@@ -14,7 +14,7 @@ struct GpuImg{
 @group(0) @binding(1) var<storage, read> input_data: GpuImg;
 @group(1) @binding(0) var<storage, read_write>  output_data: GpuImg;
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16,16)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     output_data.length = input_data.length;
 
