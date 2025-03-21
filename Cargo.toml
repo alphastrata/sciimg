@@ -10,7 +10,7 @@ keywords = ["planetary", "astrophotography", "science", "imaging"]
 license = "MIT"
 
 [features]
-default = ["full"]
+default = ["full"] # FIXME: hack(jer) I dislike configuring RA when I can just do this instead.
 rayon = ["dep:rayon"]
 wgpu = [
     "dep:wgpu",

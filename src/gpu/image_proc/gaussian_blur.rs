@@ -1,4 +1,3 @@
-//! image processing
 use crate::gpu::{gpu_context::GpuContext, image::GpuImage};
 use encase::ShaderType;
 use wgpu::include_wgsl;
