@@ -47,7 +47,7 @@ impl GpuContext {
         }
     }
 
-    pub fn create_compute_pipeline(
+    fn create_compute_pipeline(
         &self,
         layout: &wgpu::PipelineLayout,
         shader_module: &wgpu::ShaderModule,
@@ -70,7 +70,7 @@ impl GpuContext {
     /// NOTES:
     /// * This can panic if the write to the Buffer fails.
     /// * This writes to GPU memory.
-    pub fn write_img_to_device(&self, img: &GpuImage) -> (u64, wgpu::Buffer) {
+    fn write_img_to_device(&self, img: &GpuImage) -> (u64, wgpu::Buffer) {
         let mut input_bytes = Vec::new();
         {
             let mut sbuf = encase::StorageBuffer::new(&mut input_bytes);
@@ -97,7 +97,7 @@ impl GpuContext {
     /// you're on your own.
     /// * This can panic if the write to the Buffer fails.
     /// * This writes to GPU memory.
-    pub fn write_uniforms_to_device<U>(&self, uniform_data: U) -> wgpu::Buffer
+    fn write_uniforms_to_device<U>(&self, uniform_data: U) -> wgpu::Buffer
     where
         U: ShaderType + WriteInto,
     {
@@ -127,7 +127,7 @@ impl GpuContext {
     ///    @group(1) @binding(0) var<storage, read_write> output_data: GpuImg;
     /// ```
     /// Will work for them.
-    pub fn setup_bindgroups_and_layouts(
+    fn setup_bindgroups_and_layouts(
         &self,
         input_buffer: wgpu::Buffer,
         output_buffer: &wgpu::Buffer,
@@ -211,10 +211,8 @@ impl GpuContext {
         });
         (group0, group1, group0_binds, group1_binds)
     }
-}
 
-impl GpuContext {
-    pub fn create_encoder(&self) -> wgpu::CommandEncoder {
+    fn create_encoder(&self) -> wgpu::CommandEncoder {
         self.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Sciimg Compute Encoder"),
@@ -225,7 +223,7 @@ impl GpuContext {
     ///     @group(0) @binding(x) ...
     ///     @group(1) @binding(y) ...
     ///```
-    pub fn set_binds<'buf, I>(&self, compute_pass: &mut wgpu::ComputePass<'_>, bind_groups: I)
+    fn set_binds<'buf, I>(&self, compute_pass: &mut wgpu::ComputePass<'_>, bind_groups: I)
     where
         I: IntoIterator<Item = &'buf wgpu::BindGroup>,
     {
@@ -237,7 +235,7 @@ impl GpuContext {
     }
 
     /// Creates a pipeline layout suitable for 2, and ONLY 2 Layouts.
-    pub fn create_pipeline_layout(
+    fn create_pipeline_layout(
         &self,
         bind_group_layouts: &[&wgpu::BindGroupLayout; 2],
         shader: wgpu::ShaderModuleDescriptor,
@@ -253,7 +251,7 @@ impl GpuContext {
 
         (pipeline_layout, cs_module)
     }
-    pub fn create_compute_pass<'e>(
+    fn create_compute_pass<'e>(
         &self,
         pipeline: wgpu::ComputePipeline,
         encoder: &'e mut wgpu::CommandEncoder,
@@ -274,7 +272,7 @@ impl GpuContext {
     /// processed, rounding up the number of workgroups if `width` or `height` are not
     /// perfectly divisible by the workgroup size. The shader must handle out-of-bounds
     /// access.
-    pub fn run_compute_job(
+    fn run_compute_job(
         &self,
         width: u32,
         height: u32,
@@ -295,7 +293,7 @@ impl GpuContext {
     ///
     /// NOTES:
     /// - Panics if the output is empty.
-    pub fn read_from_device(
+    pub(crate) fn read_from_device(
         &self,
         output_buffer: wgpu::Buffer,
         readback_buffer: wgpu::Buffer,
@@ -338,7 +336,7 @@ impl GpuContext {
 }
 
 impl GpuContext {
-    pub(crate) fn default_io_buffers(
+    fn default_io_buffers(
         &self,
         input_size: u64,
         input_buffer: &wgpu::Buffer,
@@ -361,6 +359,14 @@ impl GpuContext {
         });
         (output_buffer, readback_buffer)
     }
+
+    /// If you're happy to run with the defaults Sciimg has decided, then this is probably the way
+    /// to go for your first few image processing shaders.
+    ///
+    /// It should be a safe starting point to wet your feet with image processing on GPUs.
+    ///
+    /// This call makes many many assumptions, basically in an effort to make a simpler UI we're removing all the
+    /// pipeline control.
     pub(crate) fn inner_run_simple_gpu_job<U: ShaderType + WriteInto>(
         &self,
         img: &GpuImage,
@@ -385,6 +391,7 @@ impl GpuContext {
         self.set_binds(&mut compute_pass, [&group0_binds, &group1_binds]);
 
         self.run_compute_job(width, height, None, None, compute_pass);
+
         (output_buffer, readback_buffer, encoder)
     }
 }
