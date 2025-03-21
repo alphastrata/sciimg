@@ -1,20 +1,10 @@
 //! image processing
-use crate::{
-    enums,
-    gpu::{
-        gpu_context::GpuContext,
-        image::{Empty, GpuImage},
-    },
-    image::Image,
-    max, min, path, Dn, DnVec, Mask, MaskVec, MaskedDnVec, MinMax, VecMath,
+use crate::gpu::{
+    gpu_context::GpuContext,
+    image::{Empty, GpuImage},
 };
-use encase::{
-    internal::{CreateFrom, ReadFrom, WriteInto},
-    ArrayLength, ShaderSize, ShaderType, StorageBuffer,
-};
-use glam::{Vec4, Vec4Swizzles};
+use encase::ShaderType;
 use log;
-use wgpu::Features;
 
 #[derive(ShaderType)]
 struct GaussianBlurUniform {
@@ -22,13 +12,8 @@ struct GaussianBlurUniform {
     pub sigma: f32,
     pub width: u32,
     pub height: u32,
+    pub pass_index: u32,
 }
-// #[derive(ShaderType)]
-// pub struct GpuImage {
-//     length: ArrayLength,
-//     #[size(runtime)]
-//     pub data: Vec<Vec4>,
-// }
 impl GpuContext {
     pub fn gaussian_blur(
         &self,
@@ -43,6 +28,7 @@ impl GpuContext {
             sigma,
             width,
             height,
+            pass_index: 0,
         };
 
         // 1) Create & fill input buffer
@@ -174,7 +160,8 @@ impl GpuContext {
             });
         let cs_module = self
             .device
-            .create_shader_module(wgpu::include_wgsl!("../shaders/gaussian_blur.wgsl"));
+            // .create_shader_module(wgpu::include_wgsl!("../shaders/gaussian_blur.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("../shaders/fast_gaussian_blur.wgsl"));
         let pipeline = self.create_compute_pipeline(&pipeline_layout, &cs_module, "main");
 
         // 7) Bind things TO that Pipeline
@@ -242,10 +229,11 @@ impl GpuContext {
 
 #[cfg(test)]
 mod test {
+    use crate::image::Image;
+
     use super::*;
     const INPAINT_TEST_IMAGE: &str =
         "tests/testdata/ZL0_0038_0670307360_057ECM_N0031392ZCAM08007_1100LUJ.png";
-    use glam::Vec4Swizzles;
 
     #[test]
     fn gpu_gaussian_blur() {
@@ -266,7 +254,7 @@ mod test {
             start_img.get_band(0).buffer.len(),
             res_as_sciimg.get_band(0).buffer.len(),
         );
-        let zeroes = Vec4::ZERO.to_array();
+        let zeroes = glam::Vec4::ZERO.to_array();
         assert!(res.data.iter().all(|v| v.to_array() != zeroes));
     }
 }

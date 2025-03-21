@@ -81,27 +81,49 @@ fn benchmark_gaussian_blur(c: &mut Criterion) {
             });
         }
     }
+}
+#[cfg(feature = "wgpu")]
+fn benchmark_gpu_gaussian_blur(c: &mut Criterion) {
+    let mut group = c.benchmark_group("GPU-GaussianBlur");
+    group.measurement_time(Duration::from_secs(10));
 
-    #[cfg(feature = "wgpu")]
-    {
-        let gpu = pollster::block_on(GpuContext::new());
-        let img = Image::open(&String::from(INPAINT_TEST_IMAGE)).unwrap();
-        let (width, height) = (img.width, img.height);
-        let img = GpuImage::from_sciimg_rgb(&img);
+    let sigma_values = [2.2, 4.2, 8.2];
+    let radius = [9, 16, 36];
 
-        let radius = 4;
+    let gpu = pollster::block_on(GpuContext::new());
+    let img = Image::open(&String::from(INPAINT_TEST_IMAGE)).unwrap();
+    let (width, height) = (img.width, img.height);
+    let img = GpuImage::from_sciimg_rgb(&img);
 
-        for sigma in sigma_values.iter() {
-            // Benchmark original implementation
-            group.bench_with_input(BenchmarkId::new("gpu", sigma), sigma, |b, &sigma| {
-                b.iter(|| {
-                    black_box(gpu.gaussian_blur(&img, width as u32, height as u32, radius, sigma));
-                })
-            });
+    for sigma in sigma_values.iter() {
+        for radius in radius.iter() {
+            group.bench_with_input(
+                BenchmarkId::new(
+                    format!("gpu_gaussian_blur sig:{}, rad:{} ", sigma, radius),
+                    sigma,
+                ),
+                sigma,
+                |b, &sigma| {
+                    b.iter(|| {
+                        black_box(gpu.gaussian_blur(
+                            &img,
+                            width as u32,
+                            height as u32,
+                            *radius,
+                            sigma,
+                        ));
+                    })
+                },
+            );
         }
     }
+
     group.finish();
 }
 
-criterion_group!(benches, benchmark_gaussian_blur);
+criterion_group!(
+    benches,
+    // benchmark_gaussian_blur,
+    benchmark_gpu_gaussian_blur
+);
 criterion_main!(benches);
