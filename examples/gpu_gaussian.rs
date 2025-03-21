@@ -28,8 +28,8 @@ fn main() -> anyhow::Result<()> {
     let conversion_time = conversion_start.elapsed();
     info!("Conversion to gpuimg complete in: {:?}", conversion_time);
 
-    let radius = 32;
-    let sigma = 2.8;
+    let radius = 16;
+    let sigma = 6.8;
     let (width, height) = (start_img.width, start_img.height);
 
     let blur_start = Instant::now();
