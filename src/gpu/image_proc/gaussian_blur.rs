@@ -32,21 +32,9 @@ impl GpuContext {
         };
 
         // 1) Create & fill input buffer
-        let mut input_bytes = Vec::new();
-        {
-            let mut sbuf = encase::StorageBuffer::new(&mut input_bytes);
-            sbuf.write(img).unwrap();
-        }
-        let input_size = input_bytes.len() as wgpu::BufferAddress;
+        let (input_size, input_buffer) = self.write_img_to_device(img);
 
-        let input_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GaussianBlur Input"),
-            size: input_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.queue.write_buffer(&input_buffer, 0, &input_bytes);
-
+        // NOTE: Don't abstract these -- it's not worth it to have a 'helper'
         // 2a) Output buffer
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("GaussianBlur Output"),
@@ -64,20 +52,9 @@ impl GpuContext {
             mapped_at_creation: false,
         });
 
+        // Uniforms are special:
         // 3) Uniform buffer
-        let mut uniform_bytes = Vec::new();
-        {
-            let mut ubuf = encase::UniformBuffer::new(&mut uniform_bytes);
-            ubuf.write(&uniform_data).unwrap();
-        }
-        let uniform_size = uniform_bytes.len() as wgpu::BufferAddress;
-        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GaussianBlur Uniform"),
-            size: uniform_size,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+        let uniform_buffer = self.write_uniforms_to_device(uniform_data);
 
         // 4) Bind group layouts
         // @group(0)
@@ -160,8 +137,8 @@ impl GpuContext {
             });
         let cs_module = self
             .device
-            // .create_shader_module(wgpu::include_wgsl!("../shaders/gaussian_blur.wgsl"));
-            .create_shader_module(wgpu::include_wgsl!("../shaders/fast_gaussian_blur.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("../shaders/gaussian_blur.wgsl"));
+        // .create_shader_module(wgpu::include_wgsl!("../shaders/fast_gaussian_blur.wgsl"));
         let pipeline = self.create_compute_pipeline(&pipeline_layout, &cs_module, "main");
 
         // 7) Bind things TO that Pipeline

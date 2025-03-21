@@ -17,7 +17,9 @@ pub struct GpuContext {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    //TODO: Maybe store a compute pipeline in here? the only thing we're gonna be swapping in and out are shaders/entry points...
+
+    // work related
+    pub pipeline: Option<wgpu::ComputePipeline>,
 }
 
 impl GpuContext {
@@ -48,6 +50,7 @@ impl GpuContext {
             adapter,
             device,
             queue,
+            pipeline: None,
         }
     }
 
@@ -67,45 +70,59 @@ impl GpuContext {
                 cache: None,
             })
     }
+}
 
-    pub fn run_compute_job(
-        &self,
-        pipeline: &wgpu::ComputePipeline,
-        bind_groups: &[&wgpu::BindGroup],
-        workgroup_count_x: u32,
-        workgroup_count_y: u32,
-        workgroup_count_z: u32,
-    ) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Sciimg Compute Encoder"),
-            });
-
+impl GpuContext {
+    /// Host -> Device
+    /// Copies a GpuImage `Into` a `wgpu::Buffer` AND writes it to GPU Storage.
+    ///
+    /// NOTES:
+    /// * This can panic if the write to the Buffer fails.
+    /// * This writes to GPU memory.
+    pub fn write_img_to_device(&self, img: &GpuImage) -> (u64, wgpu::Buffer) {
+        let mut input_bytes = Vec::new();
         {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Sciimg Compute Pass"),
-                timestamp_writes: None,
-            });
-
-            compute_pass.set_pipeline(pipeline);
-
-            bind_groups
-                .iter()
-                .enumerate()
-                .for_each(|(idx, bind_group)| {
-                    compute_pass.set_bind_group(idx as u32, *bind_group, &[]);
-                });
-
-            compute_pass.dispatch_workgroups(
-                workgroup_count_x,
-                workgroup_count_y,
-                workgroup_count_z,
-            );
+            let mut sbuf = encase::StorageBuffer::new(&mut input_bytes);
+            sbuf.write(img).unwrap();
         }
+        let input_size = input_bytes.len() as wgpu::BufferAddress;
 
-        self.queue.submit([encoder.finish()]);
+        let input_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("GaussianBlur Input"),
+            size: input_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&input_buffer, 0, &input_bytes);
+        (input_size, input_buffer)
+    }
 
-        self.device.poll(wgpu::PollType::Wait).unwrap();
+    /// Host -> Device
+    /// Copies `Uniforms` to the GPU.
+    /// Your uniforms must derive `encase::Shadertype`
+    ///
+    /// NOTES:
+    /// * By convention this call binds to `@group(0) @binding(0)`, if you want something other than that,
+    /// you're on your own.
+    /// * This can panic if the write to the Buffer fails.
+    /// * This writes to GPU memory.
+    pub fn write_uniforms_to_device<U>(&self, uniform_data: U) -> wgpu::Buffer
+    where
+        U: ShaderType + WriteInto,
+    {
+        let mut uniform_bytes = Vec::new();
+        {
+            let mut ubuf = encase::UniformBuffer::new(&mut uniform_bytes);
+            ubuf.write(&uniform_data).unwrap();
+        }
+        let uniform_size = uniform_bytes.len() as wgpu::BufferAddress;
+        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("GaussianBlur Uniform"),
+            size: uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+        uniform_buffer
     }
 }

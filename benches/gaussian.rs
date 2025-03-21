@@ -85,10 +85,10 @@ fn benchmark_gaussian_blur(c: &mut Criterion) {
 #[cfg(feature = "wgpu")]
 fn benchmark_gpu_gaussian_blur(c: &mut Criterion) {
     let mut group = c.benchmark_group("GPU-GaussianBlur");
-    group.measurement_time(Duration::from_secs(10));
+    group.measurement_time(Duration::from_secs(5));
 
-    let sigma_values = [2.2, 4.2, 8.2];
-    let radius = [9, 16, 36];
+    let sigma_values = [2.8];
+    let radius = [32];
 
     let gpu = pollster::block_on(GpuContext::new());
     let img = Image::open(&String::from(INPAINT_TEST_IMAGE)).unwrap();
@@ -123,7 +123,7 @@ fn benchmark_gpu_gaussian_blur(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    // benchmark_gaussian_blur,
+    benchmark_gaussian_blur,
     benchmark_gpu_gaussian_blur
 );
 criterion_main!(benches);
