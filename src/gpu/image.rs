@@ -66,12 +66,7 @@ impl GpuImage {
         let mut red_buf = Vec::with_capacity(size);
         let mut green_buf = Vec::with_capacity(size);
         let mut blue_buf = Vec::with_capacity(size);
-        // for px in &self.data {
-        //     red_buf.push(px.x);
-        //     green_buf.push(px.y);
-        //     blue_buf.push(px.z);
-        //     // Ignoring alpha for now.
-        // }
+
         for px in &self.data {
             red_buf.push(px.x.clamp(0.0, 1.0));
             green_buf.push(px.y.clamp(0.0, 1.0));
@@ -132,9 +127,6 @@ impl Empty for GpuImage {
 }
 
 pub mod dimensions {
-    
-
-    
 
     pub trait ImgDimensions {
         fn dimensions(&self) -> (u32, u32);

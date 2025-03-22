@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     info!("GPU context created in: {:?}", gpu_creation_time);
 
     let load_start = Instant::now();
-    let mut start_img = Image::open(&String::from(EXAMPLE_IMG)).unwrap();
+    let start_img = Image::open(&String::from(EXAMPLE_IMG)).unwrap();
     let load_time = load_start.elapsed();
     info!("Original sciimg loaded in: {:?}", load_time);
 
@@ -39,33 +39,9 @@ fn main() -> anyhow::Result<()> {
 
     info!("Saving the processed image...");
     let save_start = Instant::now();
-    let size = gpu_img.data.len();
-    let mut red_buf = Vec::with_capacity(size);
-    let mut green_buf = Vec::with_capacity(size);
-    let mut blue_buf = Vec::with_capacity(size);
-    for px in &res.data {
-        red_buf.push(px.x);
-        green_buf.push(px.y);
-        blue_buf.push(px.z);
-        // Ignoring alpha for now.
-        // Although note for stride reasons we always use vec4<f32> on the GPU side so
-        // alpha is ALWAYS there.
-    }
+    let new_img = res.to_sciimg(width, height).unwrap();
 
-    let red_band =
-        ImageBuffer::from_vec_as_mode(&red_buf, width, height, enums::ImageMode::U16BIT)?;
-
-    let green_band =
-        ImageBuffer::from_vec_as_mode(&green_buf, width, height, enums::ImageMode::U16BIT)?;
-
-    let blue_band =
-        ImageBuffer::from_vec_as_mode(&blue_buf, width, height, enums::ImageMode::U16BIT)?;
-
-    start_img.set_band(&red_band, 0);
-    start_img.set_band(&green_band, 1);
-    start_img.set_band(&blue_band, 2);
-
-    start_img.save_rgba("gaussian_gpu.png");
+    new_img.save_rgba("gaussian_gpu.png");
     let save_time = save_start.elapsed();
     info!(
         "Processed image saved as 'gaussian_gpu.png' in: {:?}",
