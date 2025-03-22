@@ -1,9 +1,7 @@
 use log::info;
 use sciimg::{
-    enums,
     gpu::{gpu_context::GpuContext, image::GpuImage},
     image::Image,
-    prelude::ImageBuffer,
 };
 use std::time::Instant;
 
